@@ -7,8 +7,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI  # Connects LangChain 
 from langgraph.graph import START, END, MessagesState, StateGraph  # Core LangGraph graph components.
 from langgraph.prebuilt import ToolNode, tools_condition  # Executes tools and routes based on tool calls.
 
-from scenarios import SCENARIOS  # Our fixed, simulated incident datasets.
-from tools import DIAGNOSTIC_TOOLS  # The three diagnostic tools the model can choose from.
+from evaluation import evaluate_severity
+from scenarios import SCENARIOS
+from tools import DIAGNOSTIC_TOOLS
 
 
 load_dotenv()  # Makes .env variables available through os.getenv(); does not print secrets.
@@ -26,13 +27,18 @@ Rules:
 - Distinguish confirmed observations from hypotheses.
 - A healthy service must not be reported as an incident without evidence.
 - Do not execute remediation or claim to have changed any system.
+- A deployment preceding an incident is correlation, not proof of causation.
+- Do not claim a root cause is confirmed unless evidence directly supports it.
+- Recommend rollback as a conditional option when a deployment is a plausible cause; consider validating the change and checking additional telemetry first.
+- Use low confidence when evidence supports only a hypothesis, medium when multiple observations support it, and high only when the cause is strongly verified.
+- The deterministic rule-based severity printed by the application is authoritative; do not present a conflicting severity as the final severity.
 
 Produce a report with:
 1. Incident summary
-2. Severity: low, medium, high, or critical
+2. Incident summary
 3. Observed evidence
-4. Likely cause(s), explaining the supporting evidence
-5. Confidence: low, medium, or high, with justification
+4. Likely causes and supporting evidence
+5. Confidence and justification
 6. Recommended next diagnostic or remediation steps
 
 All data is simulated, not live production telemetry.
@@ -115,13 +121,24 @@ def main():
     # Print the final model response. Tool execution details remain in graph state.
     print(f"\nScenario: {args.scenario}")
     print("=" * 60)
+    # Calculate severity independently from the simulated scenario data.
+    scenario_data = SCENARIOS[args.scenario]
+    severity = evaluate_severity(
+        scenario_data["service"],
+        scenario_data["data_quality"],
+    )
+
+    print(f"Rule-based severity: {severity.upper()}")
+    print("Note: This severity is calculated by deterministic rules.")
+    print("-" * 60)
+
+    # Print the agent's investigation report.
     final_message = result["messages"][-1]
     for block in final_message.content:
         if isinstance(block, dict) and block.get("type") == "text":
             print(block["text"])
         elif isinstance(block, str):
             print(block)
-
 
 if __name__ == "__main__":
     main()  # Run main() only when this file is executed directly.
