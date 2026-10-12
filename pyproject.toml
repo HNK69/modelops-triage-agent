@@ -1,0 +1,10 @@
+[project]
+name = "modelops-triage-agent"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=1.4.3",
+    "langchain-google-genai>=4.4.0",
+    "langgraph>=1.2.12",
+    "python-dotenv>=1.2.4",
+]
