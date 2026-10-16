@@ -6,7 +6,7 @@ from dotenv import load_dotenv  # Loads settings from the local .env file.
 from langchain_google_genai import ChatGoogleGenerativeAI  # Connects LangChain to Gemini.
 from langgraph.graph import START, END, MessagesState, StateGraph  # Core LangGraph graph components.
 from langgraph.prebuilt import ToolNode, tools_condition  # Executes tools and routes based on tool calls.
-from evaluation import evaluate_severity
+from evaluation import evaluate_tool_evidence
 from evidence import get_tool_execution_summary, get_tool_results
 from scenarios import SCENARIOS
 from tools import DIAGNOSTIC_TOOLS
@@ -17,8 +17,13 @@ SYSTEM_PROMPT = """
 You are a ModelOps incident triage engineer investigating SIMULATED data.
 
 Investigate the supplied scenario using diagnostic tools.
-Choose tools based on the evidence; do not blindly call every tool.
-You may call multiple tools when needed to investigate a likely cause.
+
+Required diagnostics:
+- Always call check_service_health.
+- Always call check_data_quality before producing the final report.
+- Call check_deployment_history when deployment history may help explain the incident.
+
+Use returned tool results as evidence. Never invent missing results.
 
 Rules:
 - Treat tool results as observed evidence, not assumptions.
@@ -124,18 +129,8 @@ def main():
     # Print the final model response. Tool execution details remain in graph state.
     print(f"\nScenario: {args.scenario}")
     print("=" * 60)
-    # Calculate severity independently from the simulated scenario data.
-    scenario_data = SCENARIOS[args.scenario]
-    severity = evaluate_severity(
-        scenario_data["service"],
-        scenario_data["data_quality"],
-    )
 
-    print(f"Rule-based severity: {severity.upper()}")
-    print("Note: This severity is calculated by deterministic rules.")
-    print("-" * 60)
-
-    # Print the agent's investigation report.
+    tool_results = get_tool_results(result["messages"])
     tool_summary = get_tool_execution_summary(result["messages"])
 
     print("Diagnostic tool execution:")
@@ -144,16 +139,24 @@ def main():
     print(f"  Errors: {tool_summary['failed_tools']}")
     print("-" * 60)
 
-    if args.show_evidence:
-        tool_results = get_tool_results(result["messages"])
+    try:
+        severity = evaluate_tool_evidence(tool_results)
+    except (ValueError, KeyError, TypeError) as exc:
+        severity = None
+        print(f"Rule-based severity: UNAVAILABLE ({exc})")
+    else:
+        print(f"Rule-based severity: {severity.upper()}")
 
+    print("Note: This severity is calculated by deterministic rules.")
+    print("-" * 60)
+
+    if args.show_evidence:
         print("Evidence trace:")
         for item in tool_results:
             print(f"  Tool: {item['tool']}")
             print(f"  Status: {item['status']}")
             print(f"  Result: {item['content']}")
             print("-" * 40)
-
 
     final_message = result["messages"][-1]
     for block in final_message.content:
