@@ -6,11 +6,10 @@ from dotenv import load_dotenv  # Loads settings from the local .env file.
 from langchain_google_genai import ChatGoogleGenerativeAI  # Connects LangChain to Gemini.
 from langgraph.graph import START, END, MessagesState, StateGraph  # Core LangGraph graph components.
 from langgraph.prebuilt import ToolNode, tools_condition  # Executes tools and routes based on tool calls.
-
 from evaluation import evaluate_severity
+from evidence import get_tool_execution_summary, get_tool_results
 from scenarios import SCENARIOS
 from tools import DIAGNOSTIC_TOOLS
-
 
 load_dotenv()  # Makes .env variables available through os.getenv(); does not print secrets.
 
@@ -35,11 +34,10 @@ Rules:
 
 Produce a report with:
 1. Incident summary
-2. Incident summary
-3. Observed evidence
-4. Likely causes and supporting evidence
-5. Confidence and justification
-6. Recommended next diagnostic or remediation steps
+2. Observed evidence
+3. Likely causes and supporting evidence
+4. Confidence and justification
+5. Recommended next diagnostic or remediation steps
 
 All data is simulated, not live production telemetry.
 """  # Instructions guiding the model's investigation and report format.
@@ -98,6 +96,11 @@ def main():
         default="latency_spike",  # Use this case if the user provides no option.
         help="Select a simulated incident scenario.",
     )
+    parser.add_argument(
+        "--show-evidence",
+        action="store_true",
+        help="Display raw diagnostic tool results.",
+    )
     args = parser.parse_args()
 
     app = build_graph()  # Construct the agent workflow.
@@ -133,6 +136,25 @@ def main():
     print("-" * 60)
 
     # Print the agent's investigation report.
+    tool_summary = get_tool_execution_summary(result["messages"])
+
+    print("Diagnostic tool execution:")
+    print(f"  Requested: {tool_summary['requested_tools']}")
+    print(f"  Returned results: {tool_summary['successful_tools']}")
+    print(f"  Errors: {tool_summary['failed_tools']}")
+    print("-" * 60)
+
+    if args.show_evidence:
+        tool_results = get_tool_results(result["messages"])
+
+        print("Evidence trace:")
+        for item in tool_results:
+            print(f"  Tool: {item['tool']}")
+            print(f"  Status: {item['status']}")
+            print(f"  Result: {item['content']}")
+            print("-" * 40)
+
+
     final_message = result["messages"][-1]
     for block in final_message.content:
         if isinstance(block, dict) and block.get("type") == "text":
